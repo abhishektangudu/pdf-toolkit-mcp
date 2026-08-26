@@ -1,0 +1,6 @@
+{
+  "name": "PDF Agent Toolkit & MCP Server",
+  "description": "Comprehensive PDF manipulation suite, Model Context Protocol (MCP) server, and continuous evaluation benchmark suite for AI agents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
