@@ -20,6 +20,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import type { McpToolDefinition, ToolExecutionResult } from '../types/pdf';
+import { TOOL_PRESETS, type ToolPreset } from '../lib/tool-presets';
 import { PdfPreviewModal } from './PdfPreviewModal';
 import { PdfViewer } from './PdfViewer';
 
@@ -85,6 +86,7 @@ export const McpPlayground: React.FC<McpPlaygroundProps> = ({ tools, onExecuteTo
   const [activeFilename, setActiveFilename] = useState<string>('sample-invoice-pii.pdf');
 
   // Tool-specific JSON Arguments (excluding abstracted file paths)
+  const [activePresetId, setActivePresetId] = useState<string>('redact_sensitive_subset');
   const [jsonArgs, setJsonArgs] = useState<string>(
     JSON.stringify(
       {
@@ -214,122 +216,41 @@ export const McpPlayground: React.FC<McpPlaygroundProps> = ({ tools, onExecuteTo
     setResponseLog(null);
     setLastOutputBase64(null);
 
-    // Pick recommended default sample for this tool
-    let recommendedSample: SampleKey = 'invoice';
-    if (['split_pdf', 'organize_pdf', 'compress_pdf', 'extract_pdf_content'].includes(toolName)) {
-      recommendedSample = 'report';
-    } else if (toolName === 'stamp_watermark') {
-      recommendedSample = 'contract';
-    } else if (toolName === 'inspect_and_fill_form') {
-      recommendedSample = 'form';
-    }
+    const presetsForTool = TOOL_PRESETS[toolName] || [];
+    if (presetsForTool.length > 0) {
+      const defaultPreset = presetsForTool[0];
+      applyPreset(defaultPreset, toolName);
+    } else {
+      setActivePresetId('custom');
+      // Pick recommended default sample for this tool
+      let recommendedSample: SampleKey = 'invoice';
+      if (['split_pdf', 'organize_pdf', 'compress_pdf', 'extract_pdf_content'].includes(toolName)) {
+        recommendedSample = 'report';
+      } else if (toolName === 'stamp_watermark') {
+        recommendedSample = 'contract';
+      } else if (toolName === 'inspect_and_fill_form') {
+        recommendedSample = 'form';
+      }
 
+      if (toolName !== 'create_pdf_from_text') {
+        loadSampleBuffer(recommendedSample, false);
+      } else {
+        setInputPath('(Not required - creates new PDF from markdown)');
+        setOutputPath('./documents/out-generated-report.pdf');
+      }
+      setJsonArgs(JSON.stringify({ mode: 'standard' }, null, 2));
+    }
+  };
+
+  const applyPreset = (preset: ToolPreset, toolName: string = selectedToolName) => {
+    setActivePresetId(preset.id);
+    setJsonArgs(JSON.stringify(preset.args, null, 2));
+    
     if (toolName !== 'create_pdf_from_text') {
-      loadSampleBuffer(recommendedSample, false);
+      loadSampleBuffer(preset.sampleKey, false);
     } else {
       setInputPath('(Not required - creates new PDF from markdown)');
       setOutputPath('./documents/out-generated-report.pdf');
-    }
-
-    // Configure tool specific arguments (omitting input/output paths)
-    switch (toolName) {
-      case 'scan_and_redact_pii':
-        setJsonArgs(
-          JSON.stringify(
-            {
-              redactionReason: 'PII REDACTED (GDPR/HIPAA)',
-              customKeywords: ['SecretKey', 'Confidential'],
-              blackoutBoxes: [
-                { page: 1, x: 38, y: 653, width: 180, height: 16 }, // Surgically redacts "Tax ID / SSN: 987-65-4321"
-                { page: 1, x: 38, y: 638, width: 235, height: 16 }, // Surgically redacts "Card on file: 4532-8921-3829-1928"
-              ],
-            },
-            null,
-            2
-          )
-        );
-        break;
-      case 'compress_pdf':
-        setJsonArgs(JSON.stringify({ preset: 'ebook' }, null, 2));
-        break;
-      case 'split_pdf':
-        setJsonArgs(JSON.stringify({ pageRange: '1-2' }, null, 2));
-        break;
-      case 'organize_pdf':
-        setJsonArgs(
-          JSON.stringify(
-            {
-              rotations: [{ page: 1, degrees: 90 }],
-              addPageNumbers: { position: 'bottom-center' },
-            },
-            null,
-            2
-          )
-        );
-        break;
-      case 'stamp_watermark':
-        setJsonArgs(
-          JSON.stringify(
-            {
-              text: 'CONFIDENTIAL',
-              opacity: 0.3,
-              fontSize: 42,
-              rotationDegrees: 45,
-            },
-            null,
-            2
-          )
-        );
-        break;
-      case 'inspect_and_fill_form':
-        setJsonArgs(
-          JSON.stringify(
-            {
-              values: {
-                fullName: 'Jane Doe',
-                email: 'jane.doe@enterprise.io',
-                department: 'AI Systems',
-                acceptTerms: true,
-              },
-              flatten: false,
-            },
-            null,
-            2
-          )
-        );
-        break;
-      case 'create_pdf_from_text':
-        setJsonArgs(
-          JSON.stringify(
-            {
-              title: 'Agent Architecture Specification',
-              content:
-                '# Executive Summary\nGenerated dynamically by the Model Context Protocol PDF Engine.\n\n# System Guarantees\n- 100% Client-side and in-memory WebAssembly isolation.\n- Token-optimized structured text extraction saves ~85% LLM context.',
-            },
-            null,
-            2
-          )
-        );
-        break;
-      case 'merge_pdfs':
-        setJsonArgs(
-          JSON.stringify(
-            {
-              inputFiles: [
-                './documents/sample-invoice-pii.pdf',
-                './documents/sample-multi-chapter-report.pdf',
-              ],
-            },
-            null,
-            2
-          )
-        );
-        break;
-      case 'extract_pdf_content':
-        setJsonArgs(JSON.stringify({ pageRange: '1-3', extractType: 'summary' }, null, 2));
-        break;
-      default:
-        setJsonArgs(JSON.stringify({ mode: 'standard' }, null, 2));
     }
   };
 
@@ -645,7 +566,49 @@ export const McpPlayground: React.FC<McpPlaygroundProps> = ({ tools, onExecuteTo
 
             {/* Additional Tool-Specific Arguments Editor */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              {/* Presets Bar */}
+              {TOOL_PRESETS[selectedToolName] && TOOL_PRESETS[selectedToolName].length > 0 && (
+                <div className="space-y-1.5 pb-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-slate-700 flex items-center space-x-1">
+                      <Sparkles className="w-3 h-3 text-amber-500" />
+                      <span>Ready-to-Run Parameter Presets:</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {TOOL_PRESETS[selectedToolName].length} presets available
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {TOOL_PRESETS[selectedToolName].map((preset) => {
+                      const isSelected = activePresetId === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          id={`btn-preset-${preset.id}`}
+                          onClick={() => applyPreset(preset)}
+                          className={`text-left p-2 rounded-xl border text-xs transition-all ${
+                            isSelected
+                              ? 'bg-indigo-50 border-indigo-400 text-indigo-950 ring-1 ring-indigo-400 shadow-2xs font-semibold'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold">{preset.name}</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 uppercase font-mono">
+                              {preset.sampleKey}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5 font-normal">
+                            {preset.description}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-1">
                 <label className="text-xs font-semibold text-slate-700 flex items-center space-x-1.5">
                   <Code2 className="w-3.5 h-3.5 text-indigo-600" />
                   <span>Tool Arguments JSON (params)</span>

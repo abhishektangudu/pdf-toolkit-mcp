@@ -27,7 +27,7 @@ import {
 export function createPdfMcpServer() {
   const server = new Server(
     {
-      name: 'pdf-agent-toolkit-mcp',
+      name: 'pdf-toolkit-mcp',
       version: '1.0.0',
     },
     {
