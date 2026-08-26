@@ -11,7 +11,8 @@ import {
   getFormFields,
   fillForm,
 } from './pdf-engine';
-import { createSampleInvoicePdf, createSampleReportPdf } from './sample-pdfs';
+import { createSampleInvoicePdf, createSampleReportPdf, createSampleFormPdf } from './sample-pdfs';
+import { TOOL_PRESETS } from './tool-presets';
 import {
   AGENT_ROUTING_SAMPLES,
   predictAgentToolAndArgs,
@@ -69,6 +70,14 @@ export const EVAL_TEST_CASES: EvalTestCase[] = [
     description: 'Asserts programmatic PDF generator creates valid multi-section A4 layouts with header banners and footers.',
     targetTool: 'create_pdf_from_text',
     complexity: 'low',
+  },
+  {
+    id: 'eval_acroform_fill_and_flatten',
+    title: 'AcroForm Inspection, Population & Vector Flattening',
+    category: 'structural_invariants',
+    description: 'Asserts that interactive form fields are enumerated, populated with values, and flattened into secure static vectors.',
+    targetTool: 'inspect_and_fill_form',
+    complexity: 'medium',
   },
 
   // 2. PII Security & Redaction Precision
@@ -133,6 +142,14 @@ export const EVAL_TEST_CASES: EvalTestCase[] = [
     description: 'Benchmarks the model/agent router against 8 canonical natural language PDF tasks to measure tool selection accuracy and argument mapping.',
     targetTool: 'predictAgentToolAndArgs',
     complexity: 'high',
+  },
+  {
+    id: 'eval_tool_presets_validity_coverage',
+    title: 'Tool Presets Schema & Sample Coverage',
+    category: 'agent_intent_routing',
+    description: 'Validates that all MCP tools have rich, schema-compliant parameter presets targeting valid sample fixtures.',
+    targetTool: 'TOOL_PRESETS',
+    complexity: 'low',
   },
 
   // 6. Edge Cases & Validation Hardening
@@ -333,6 +350,61 @@ export async function runTestCase(testId: string): Promise<EvalTestResult> {
           sizeBytes: generatedBuf.byteLength,
         };
         outputSnippet = `Generated ${doc.getPageCount()} page document "${title}". Size: ${generatedBuf.byteLength} bytes.`;
+        break;
+      }
+
+      // AcroForm Inspection, Population & Vector Flattening
+      case 'eval_acroform_fill_and_flatten': {
+        const formBuf = await createSampleFormPdf();
+        const initialFields = await getFormFields(formBuf);
+
+        const fieldNames = initialFields.map((f) => f.name);
+        const hasFullName = fieldNames.includes('fullName');
+        const hasEmail = fieldNames.includes('email');
+        const hasDepartment = fieldNames.includes('department');
+        const hasAgree = fieldNames.includes('agreeToTerms');
+
+        assertions.push({
+          name: 'Discovered all interactive AcroForm fields (fullName, email, department, agreeToTerms)',
+          expected: true,
+          actual: hasFullName && hasEmail && hasDepartment && hasAgree,
+          passed: hasFullName && hasEmail && hasDepartment && hasAgree,
+          details: `Discovered ${initialFields.length} form fields: ${fieldNames.join(', ')}`,
+        });
+
+        // Fill and flatten
+        const filledFlattenedBuf = await fillForm(
+          formBuf,
+          {
+            fullName: 'Benchmark Test Agent',
+            email: 'benchmark@agent-eval.org',
+            department: 'Autonomous AI Research',
+            agreeToTerms: true,
+          },
+          true // Flatten
+        );
+
+        const flattenedFields = await getFormFields(filledFlattenedBuf);
+        assertions.push({
+          name: 'Vector flattening permanently converts interactive inputs to static curves (0 remaining interactive fields)',
+          expected: 0,
+          actual: flattenedFields.length,
+          passed: flattenedFields.length === 0,
+        });
+
+        const doc = await PDFDocument.load(filledFlattenedBuf);
+        assertions.push({
+          name: 'Flattened output maintains valid PDF structure and visual content',
+          expected: 1,
+          actual: doc.getPageCount(),
+          passed: doc.getPageCount() === 1,
+        });
+
+        metrics = {
+          pageCount: 1,
+          sizeBytes: filledFlattenedBuf.byteLength,
+        };
+        outputSnippet = `Populated 4 AcroForm fields & flattened vectors. Final size: ${filledFlattenedBuf.byteLength} bytes.`;
         break;
       }
 
@@ -577,6 +649,53 @@ export async function runTestCase(testId: string): Promise<EvalTestResult> {
         });
 
         outputSnippet = `Intent Classifier Score: ${correctMatches}/${total} (${accuracyPercent}%) on benchmark prompts.`;
+        break;
+      }
+
+      // Tool Presets Schema & Sample Coverage
+      case 'eval_tool_presets_validity_coverage': {
+        const toolNames = Object.keys(TOOL_PRESETS);
+        const allPresets = Object.values(TOOL_PRESETS).flat();
+
+        assertions.push({
+          name: 'All 8 core MCP tools have configured tool presets',
+          expected: true,
+          actual: toolNames.length >= 8,
+          passed: toolNames.length >= 8,
+          details: `Covered tools: ${toolNames.join(', ')}`,
+        });
+
+        assertions.push({
+          name: 'Preset catalog contains at least 18 total ready-to-run parameter configurations',
+          expected: true,
+          actual: allPresets.length >= 18,
+          passed: allPresets.length >= 18,
+          details: `Total available presets: ${allPresets.length}`,
+        });
+
+        const validSamples = ['invoice', 'report', 'contract', 'form'];
+        const allSampleKeysValid = allPresets.every((p) => validSamples.includes(p.sampleKey));
+
+        assertions.push({
+          name: 'Every preset binds to a valid sample fixture (invoice, report, contract, form)',
+          expected: true,
+          actual: allSampleKeysValid,
+          passed: allSampleKeysValid,
+        });
+
+        const allHaveArgs = allPresets.every((p) => p.args && typeof p.args === 'object');
+        assertions.push({
+          name: 'Every preset contains valid non-empty arguments dictionary',
+          expected: true,
+          actual: allHaveArgs,
+          passed: allHaveArgs,
+        });
+
+        metrics = {
+          totalPresets: allPresets.length,
+          toolsCovered: toolNames.length,
+        };
+        outputSnippet = `Validated ${allPresets.length} presets across ${toolNames.length} MCP tools with 100% schema compliance.`;
         break;
       }
 

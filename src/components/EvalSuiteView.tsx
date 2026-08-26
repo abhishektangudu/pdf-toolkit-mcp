@@ -153,12 +153,12 @@ export const EvalSuiteView: React.FC = () => {
 
   const categories = [
     { id: 'all', label: 'All Benchmarks', count: testCases.length },
-    { id: 'structural_invariants', label: 'Structural Invariants', count: 5 },
-    { id: 'pii_security', label: 'PII Privacy & Recall', count: 2 },
-    { id: 'compression_bench', label: 'Stream Compression', count: 2 },
-    { id: 'token_economy', label: 'Token Economy', count: 2 },
-    { id: 'agent_intent_routing', label: 'Agent Routing', count: 1 },
-    { id: 'edge_cases', label: 'Edge Hardening', count: 2 },
+    { id: 'structural_invariants', label: 'Structural Invariants', count: testCases.filter(t => t.category === 'structural_invariants').length },
+    { id: 'pii_security', label: 'PII Privacy & Recall', count: testCases.filter(t => t.category === 'pii_security').length },
+    { id: 'compression_bench', label: 'Stream Compression', count: testCases.filter(t => t.category === 'compression_bench').length },
+    { id: 'token_economy', label: 'Token Economy', count: testCases.filter(t => t.category === 'token_economy').length },
+    { id: 'agent_intent_routing', label: 'Agent Routing', count: testCases.filter(t => t.category === 'agent_intent_routing').length },
+    { id: 'edge_cases', label: 'Edge Hardening', count: testCases.filter(t => t.category === 'edge_cases').length },
   ];
 
   const filteredTests = testCases.filter((test) => {
